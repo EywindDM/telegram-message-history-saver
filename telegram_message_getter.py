@@ -1,7 +1,7 @@
 import csv
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import sys
 
 from telethon import TelegramClient, events, sync
@@ -24,59 +24,36 @@ def get_env(name, message, cast=str):
 
 
 def get_user_dialog_from_args(dialogs):
-    for d in dialogs:
-        if d.title.replace(' ', '') == sys.argv[1]:
-            users_dialog = d
-            break
     try:
-        users_dialog
+        for d in dialogs:
+            if d.title.replace(' ', '') == sys.argv[1]:
+                users_dialog = d
+                break
+        return [users_dialog]
     except Exception:
-        print()
-        print("ERROR --> user's dialog not found")
-        print()
-
-    return [users_dialog]
+        return dialogs
 
 
-def get_user_params_and_write_data_to_csv(dialog, chat_history, not_full_chat=False):
-    if not_full_chat:
-        filename = dialog.title.replace('/', '') + '_' + sys.argv[-1] + '_messages_' + str(datetime.now()).split('.')[0].replace(' ', '_')+ '.csv'
-    else:
-        filename = dialog.title.replace('/', '') + '.csv'
+def get_user_params_and_write_data_to_csv(filename,
+                                          chat_history,
+                                          file_existed=False,):
 
-    with open(filename, 'a', encoding='utf-8-sig', newline='') as f:
+    with open(filename, 'a+', encoding='utf-8-sig', newline='') as f:
         file = csv.writer(f, dialect='excel')
-        file.writerow(['user_id', 'first_name', 'last_name', 'username', 'phone', 'message_id', 'date', 'text'])
+
+        if not file_existed:
+            file.writerow(['user_id', 'first_name', 'last_name', 'username', 'phone', 'message_id', 'date', 'text'])
 
         for message in chat_history:
-            try:
-                first_name = client.get_entity(message['user_id']).first_name
-            except Exception:
-                first_name = ''
-
-            try:
-                last_name = client.get_entity(message['user_id']).last_name
-            except Exception:
-                last_name = ''
-
-            try:
-                username = client.get_entity(message['user_id']).username
-            except Exception:
-                username = ''
-
-            try:
-                phone = client.get_entity(message['user_id']).phone
-            except Exception:
-                phone = ''
-
             file.writerow([message['user_id'],
-                           first_name,
-                           last_name,
-                           username,
-                           phone,
+                           message['first_name'],
+                           message['last_name'],
+                           message['username'],
+                           message['phone'],
                            message['message_id'],
                            message['date'],
                            message['text']])
+        print('{} - messages saved'.format(len(chat_history)))
         f.close()
 
 
@@ -89,13 +66,45 @@ async def get_all_chat_history():
                                  'text': message.message})
 
 
-async def get_last_chat_history(messages_quantity):
-    async for message in client.iter_messages(chat_entity, reverse=False, limit=int(messages_quantity)):
+async def get_last_chat_history_by_date(last_message_date):
+    async for message in client.iter_messages(chat_entity, reverse=True, offset_date=last_message_date):
         if message.message != '' and message.message != None:
             chat_history.append({'message_id': message.id,
                                  'user_id': message.from_id,
                                  'date': str(message.date).split('+')[0],
                                  'text': message.message})
+
+
+def get_user_info(client, chat_history):
+    user_id_set = {message['user_id'] for message in chat_history}
+
+    users_list = []
+    for user in user_id_set:
+        first_name = client.get_entity(user).first_name
+        last_name = client.get_entity(user).last_name
+        username = client.get_entity(user).username
+        phone = client.get_entity(user).phone
+
+        users_list.append({'user_id': user,
+                           'first_name': first_name,
+                           'last_name': last_name,
+                           'username': username,
+                           'phone': phone})
+
+    new_chat_history = []
+    for message in chat_history:
+        for user in users_list:
+            if message['user_id'] == user['user_id']:
+                new_chat_history.append({'message_id': message['message_id'],
+                                         'user_id': message['user_id'],
+                                         'first_name': user['first_name'],
+                                         'last_name': user['last_name'],
+                                         'username': user['username'],
+                                         'phone': user['phone'],
+                                         'date': message['date'],
+                                         'text': message['text']})
+                break
+    return new_chat_history
 
 
 if __name__ == '__main__':
@@ -105,32 +114,47 @@ if __name__ == '__main__':
     client.start()
 
     dialogs = [d for d in client.iter_dialogs()]
+    message_counter = 0
 
-    if len(sys.argv) == 3:
-        dialogs = get_user_dialog_from_args(dialogs)
+    dialogs = get_user_dialog_from_args(dialogs)
 
-        with client:
-            for dialog in dialogs:
-                print('start -->', dialog.title, sys.argv[-1])
-                chat_entity = client.get_entity(dialog)
-                chat_history = []
-                client.loop.run_until_complete(get_last_chat_history(sys.argv[-1]))
+    with client:
+        for dialog in dialogs:
+            file_existed = False
+            try:
+                for file_name in os.listdir(os.curdir):
+                    if file_name == dialog.title.replace('/', '') + '.csv':
+                        with open(file_name) as f:
+                            for row in csv.reader(f):
+                                if row[6] != '' and row[6] != 'date':
+                                    last_message_date = row[6]
+                        f.close()
+                        file_existed = True
+                        filename = file_name
+                        break
+            except Exception as err:
+                print(err)
 
-                chat_history.reverse()
-                get_user_params_and_write_data_to_csv(dialog, chat_history, not_full_chat=True)
-                print(dialog.title + ' ' + sys.argv[-1] + '--> Done')
-    else:
-        if len(sys.argv) == 2:
-            dialogs = get_user_dialog_from_args(dialogs)
+            chat_entity = client.get_entity(dialog)
+            chat_history = []
+            if file_existed:
+                print('information will be adding to existed file - {}'.format(filename))
+                try:
+                    last_message_date = datetime.strptime(last_message_date, '%Y-%m-%d %H:%M:%S') + timedelta(seconds=1)
+                    client.loop.run_until_complete(get_last_chat_history_by_date(last_message_date))
+                    chat_history = get_user_info(client, chat_history)
+                    get_user_params_and_write_data_to_csv(filename, chat_history, file_existed=True)
+                except Exception:
+                    print('0 - messages saved')
+            else:
+                filename = dialog.title.replace('/', '') + '.csv'
+                print('new  - {} -  file will be created'.format(filename))
 
-        with client:
-            for dialog in dialogs:
-                print('start -->', dialog.title)
-                chat_entity = client.get_entity(dialog)
-                chat_history = []
                 client.loop.run_until_complete(get_all_chat_history())
+                chat_history = get_user_info(client, chat_history)
+                get_user_params_and_write_data_to_csv(filename, chat_history)
 
-                get_user_params_and_write_data_to_csv(dialog, chat_history)
-                print(dialog.title + '--> Done')
+            print(dialog.title + '--> Done')
+            print()
     print('Finished')
 
