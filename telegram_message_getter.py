@@ -34,9 +34,7 @@ def get_user_dialog_from_args(dialogs):
         return dialogs
 
 
-def get_user_params_and_write_data_to_csv(filename,
-                                          chat_history,
-                                          file_existed=False,):
+def get_user_params_and_write_data_to_csv(filename, chat_history, file_existed=False,):
 
     with open(filename, 'a+', encoding='utf-8-sig', newline='') as f:
         file = csv.writer(f, dialect='excel')
@@ -114,7 +112,6 @@ if __name__ == '__main__':
     client.start()
 
     dialogs = [d for d in client.iter_dialogs()]
-    message_counter = 0
 
     dialogs = get_user_dialog_from_args(dialogs)
 
@@ -128,7 +125,7 @@ if __name__ == '__main__':
                             for row in csv.reader(f):
                                 if row[6] != '' and row[6] != 'date':
                                     last_message_date = row[6]
-                        f.close()
+                            f.close()
                         file_existed = True
                         filename = file_name
                         break
