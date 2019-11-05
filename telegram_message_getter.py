@@ -35,7 +35,6 @@ def get_user_dialog_from_args(dialogs):
 
 
 def get_user_params_and_write_data_to_csv(filename, chat_history, file_existed=False,):
-
     with open(filename, 'a+', encoding='utf-8-sig', newline='') as f:
         file = csv.writer(f, dialect='excel')
 
@@ -78,16 +77,11 @@ def get_user_info(client, chat_history):
 
     users_list = []
     for user in user_id_set:
-        first_name = client.get_entity(user).first_name
-        last_name = client.get_entity(user).last_name
-        username = client.get_entity(user).username
-        phone = client.get_entity(user).phone
-
         users_list.append({'user_id': user,
-                           'first_name': first_name,
-                           'last_name': last_name,
-                           'username': username,
-                           'phone': phone})
+                           'first_name': client.get_entity(user).first_name,
+                           'last_name': client.get_entity(user).last_name,
+                           'username': client.get_entity(user).username,
+                           'phone': client.get_entity(user).phone})
 
     new_chat_history = []
     for message in chat_history:
