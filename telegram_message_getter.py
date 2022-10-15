@@ -1,6 +1,6 @@
 import csv
 import os
-import time
+import re
 from datetime import datetime, timedelta
 import sys
 
@@ -11,27 +11,36 @@ from secret import api_id, api_hash  # At first we have to create an APP and get
                                      # telegram api
 
 
-def get_env(name, message, cast=str):
-    if name in os.environ:
-        return os.environ[name]
-    while True:
-        value = input(message)
-        try:
-            return cast(value)
-        except ValueError as e:
-            print(e, file=sys.stderr)
-            time.sleep(1)
-
-
 def get_user_dialog_from_args(dialogs):
-    try:
-        for d in dialogs:
-            if d.title.replace(' ', '') == sys.argv[1]:
-                users_dialog = d
-                break
-        return [users_dialog]
-    except Exception:
-        return dialogs
+    if len(sys.argv) > 1:
+        dialog_chanels = [dialog for dialog in sys.argv if re.search('channel', dialog) is not None]
+
+        if len(dialog_chanels) == 0:
+            try:
+                if len(sys.argv) > 2:
+                    dialog_name = ' '.join([arg for arg in sys.argv if re.search('telegram_message_getter', arg) is None]).strip()
+                    users_dialog = [d for d in dialogs if d.title == dialog_name]
+                else:
+                    users_dialog = [d for d in dialogs if d.title == sys.argv[1]]
+
+                if len(users_dialog) == 0:
+                    print('--incorrect chat name--')
+
+                return users_dialog
+            except Exception as err:
+                print('dialog exception -->', err)
+                return []
+        else:
+            try:
+                if re.search(r'nochannel', dialog_chanels[0]) is not None:
+                    users_dialog = [d for d in dialogs if d.is_channel is False]
+                else:
+                    users_dialog = [d for d in dialogs if d.is_channel is True and d.is_group is False]
+                return users_dialog
+            except Exception as err:
+                print('channel parametr error --->', err)
+                return []
+    return dialogs
 
 
 def get_user_params_and_write_data_to_csv(filename, chat_history, file_existed=False,):
@@ -73,15 +82,28 @@ async def get_last_chat_history_by_date(last_message_date):
 
 
 def get_user_info(client, chat_history):
-    user_id_set = {message['user_id'] for message in chat_history}
+    try:
+        user_id_set = {message['user_id'] for message in chat_history}
+    except Exception:
+        user_id_set = set()
+
+    # print('user_id_set -->', user_id_set)
 
     users_list = []
     for user in user_id_set:
+        if not user:
+            first_name, last_name, phone, username = '', '', '', ''
+        else:
+            first_name = client.get_entity(user).first_name
+            last_name = client.get_entity(user).last_name
+            phone = client.get_entity(user).phone
+            username = client.get_entity(user).username
+
         users_list.append({'user_id': user,
-                           'first_name': client.get_entity(user).first_name,
-                           'last_name': client.get_entity(user).last_name,
-                           'username': client.get_entity(user).username,
-                           'phone': client.get_entity(user).phone})
+                           'first_name': first_name,
+                           'last_name': last_name,
+                           'username': username,
+                           'phone': phone})
 
     new_chat_history = []
     for message in chat_history:
@@ -96,10 +118,14 @@ def get_user_info(client, chat_history):
                                          'date': message['date'],
                                          'text': message['text']})
                 break
+
     return new_chat_history
 
 
 if __name__ == '__main__':
+    folder_to_save_chats = '/home/user/telegram_history/'
+    os.chdir(folder_to_save_chats)
+
     session_name = os.environ.get('TG_SESSION', 'printer')
 
     client = TelegramClient(session_name, api_id, api_hash)
@@ -111,6 +137,7 @@ if __name__ == '__main__':
 
     with client:
         for dialog in dialogs:
+            # print(dialog.__dict__)
             file_existed = False
             try:
                 for file_name in os.listdir(os.curdir):
@@ -138,7 +165,7 @@ if __name__ == '__main__':
                 except Exception:
                     print('0 - messages saved')
             else:
-                filename = dialog.title.replace('/', '') + '.csv'
+                filename = folder_to_save_chats + dialog.title.replace('/', '') + '.csv'
                 print('new  - {} -  file will be created'.format(filename))
 
                 client.loop.run_until_complete(get_all_chat_history())
@@ -148,4 +175,5 @@ if __name__ == '__main__':
             print(dialog.title + '--> Done')
             print()
     print('Finished')
+
 

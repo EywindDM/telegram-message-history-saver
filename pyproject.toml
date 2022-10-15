@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "telegram-message-saver"
+version = "0.1.0"
+description = ""
+authors = ["Eywind <eywinddm@gmail.com>"]
+readme = "README.md"
+packages = [{include = "telegram_message_saver"}]
+
+[tool.poetry.dependencies]
+python = "3.7.15"
+telethon = "1.10.4"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
